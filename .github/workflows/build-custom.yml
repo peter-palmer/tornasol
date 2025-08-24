@@ -3,14 +3,7 @@ name: Build and Publish Docker Image
 on:
   push:
     branches: [main]
-    tags: ['v*']   # crea también tags semver si etiquetas v1.2.3
-
-# ==== Variables globales (cámbialas aquí si hiciera falta) ====
-env:
-  OWNER: peter-palmer
-  REPO: tornasol
-  REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/${{ env.OWNER }}/${{ env.REPO }}
+    tags: ['v*']
 
 permissions:
   contents: read
@@ -26,34 +19,34 @@ jobs:
           # --- amd64 ---
           - name: app
             dockerfile: ./docker/app.Dockerfile
-            image: ${{ env.IMAGE_PREFIX }}-app
+            image: ghcr.io/${{ github.repository_owner }}/tornasol-app
             platform: linux/amd64
             arch: amd64
           - name: db
             dockerfile: ./docker/db.Dockerfile
-            image: ${{ env.IMAGE_PREFIX }}-db
+            image: ghcr.io/${{ github.repository_owner }}/tornasol-db
             platform: linux/amd64
             arch: amd64
           - name: realtime
             dockerfile: ./docker/realtime.Dockerfile
-            image: ${{ env.IMAGE_PREFIX }}-realtime
+            image: ghcr.io/${{ github.repository_owner }}/tornasol-realtime
             platform: linux/amd64
             arch: amd64
 
           # --- arm64 ---
           - name: app
             dockerfile: ./docker/app.Dockerfile
-            image: ${{ env.IMAGE_PREFIX }}-app
+            image: ghcr.io/${{ github.repository_owner }}/tornasol-app
             platform: linux/arm64
             arch: arm64
           - name: db
             dockerfile: ./docker/db.Dockerfile
-            image: ${{ env.IMAGE_PREFIX }}-db
+            image: ghcr.io/${{ github.repository_owner }}/tornasol-db
             platform: linux/arm64
             arch: arm64
           - name: realtime
             dockerfile: ./docker/realtime.Dockerfile
-            image: ${{ env.IMAGE_PREFIX }}-realtime
+            image: ghcr.io/${{ github.repository_owner }}/tornasol-realtime
             platform: linux/arm64
             arch: arm64
 
@@ -71,7 +64,7 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -93,7 +86,7 @@ jobs:
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          platforms: ${{ matrix.platform }}      # construye una arquitectura por job
+          platforms: ${{ matrix.platform }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -109,15 +102,15 @@ jobs:
     strategy:
       matrix:
         include:
-          - image: ${{ env.IMAGE_PREFIX }}-app
-          - image: ${{ env.IMAGE_PREFIX }}-db
-          - image: ${{ env.IMAGE_PREFIX }}-realtime
+          - image: ghcr.io/${{ github.repository_owner }}/tornasol-app
+          - image: ghcr.io/${{ github.repository_owner }}/tornasol-db
+          - image: ghcr.io/${{ github.repository_owner }}/tornasol-realtime
 
     steps:
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -138,7 +131,6 @@ jobs:
         run: |
           set -euo pipefail
           for manifest_tag in ${{ steps.meta.outputs.tags }}; do
-            echo "Creating manifest for $manifest_tag"
             amd64_image="${manifest_tag}-amd64"
             arm64_image="${manifest_tag}-arm64"
             docker manifest inspect "$amd64_image" >/dev/null 2>&1 || { echo "Missing $amd64_image"; exit 1; }
