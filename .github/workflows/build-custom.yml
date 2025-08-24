@@ -3,67 +3,79 @@ name: Build and Publish Docker Image
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    tags: ['v*']   # crea también tags semver si etiquetas v1.2.3
+
+# ==== Variables globales (cámbialas aquí si hiciera falta) ====
+env:
+  OWNER: peter-palmer
+  REPO: tornasol
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ env.OWNER }}/${{ env.REPO }}
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   build-and-push:
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          # AMD64 builds on x86 runners
-          - dockerfile: ./docker/app.Dockerfile
-            image: ghcr.io/${{ github.repository_owner }}/simstudio
+          # --- amd64 ---
+          - name: app
+            dockerfile: ./docker/app.Dockerfile
+            image: ${{ env.IMAGE_PREFIX }}-app
             platform: linux/amd64
             arch: amd64
-            runner: linux-x64-8-core
-          - dockerfile: ./docker/db.Dockerfile
-            image: ghcr.io/${{ github.repository_owner }}/migrations
+          - name: db
+            dockerfile: ./docker/db.Dockerfile
+            image: ${{ env.IMAGE_PREFIX }}-db
             platform: linux/amd64
             arch: amd64
-            runner: linux-x64-8-core
-          - dockerfile: ./docker/realtime.Dockerfile
-            image: ghcr.io/${{ github.repository_owner }}/realtime
+          - name: realtime
+            dockerfile: ./docker/realtime.Dockerfile
+            image: ${{ env.IMAGE_PREFIX }}-realtime
             platform: linux/amd64
             arch: amd64
-            runner: linux-x64-8-core
-          # ARM64 builds on native ARM64 runners
-          - dockerfile: ./docker/app.Dockerfile
-            image: ghcr.io/${{ github.repository_owner }}/simstudio
+
+          # --- arm64 ---
+          - name: app
+            dockerfile: ./docker/app.Dockerfile
+            image: ${{ env.IMAGE_PREFIX }}-app
             platform: linux/arm64
             arch: arm64
-            runner: linux-arm64-8-core
-          - dockerfile: ./docker/db.Dockerfile
-            image: ghcr.io/${{ github.repository_owner }}/migrations
+          - name: db
+            dockerfile: ./docker/db.Dockerfile
+            image: ${{ env.IMAGE_PREFIX }}-db
             platform: linux/arm64
             arch: arm64
-            runner: linux-arm64-8-core
-          - dockerfile: ./docker/realtime.Dockerfile
-            image: ghcr.io/${{ github.repository_owner }}/realtime
+          - name: realtime
+            dockerfile: ./docker/realtime.Dockerfile
+            image: ${{ env.IMAGE_PREFIX }}-realtime
             platform: linux/arm64
             arch: arm64
-            runner: linux-arm64-8-core
-    runs-on: ${{ matrix.runner }}
-    permissions:
-      contents: read
-      packages: write
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to the Container registry
+      - name: Login to GHCR
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata (tags, labels) for Docker
+      - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -76,12 +88,12 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}.{{patch}},suffix=-${{ matrix.arch }}
             type=sha,format=long,suffix=-${{ matrix.arch }}
 
-      - name: Build and push Docker image
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ${{ matrix.dockerfile }}
-          platforms: ${{ matrix.platform }}
+          platforms: ${{ matrix.platform }}      # construye una arquitectura por job
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -97,22 +109,19 @@ jobs:
     strategy:
       matrix:
         include:
-          - image: ghcr.io/${{ github.repository_owner }}/simstudio
-          - image: ghcr.io/${{ github.repository_owner }}/migrations
-          - image: ghcr.io/${{ github.repository_owner }}/realtime
-    permissions:
-      contents: read
-      packages: write
+          - image: ${{ env.IMAGE_PREFIX }}-app
+          - image: ${{ env.IMAGE_PREFIX }}-db
+          - image: ${{ env.IMAGE_PREFIX }}-realtime
 
     steps:
-      - name: Log in to the Container registry
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata for manifest
+      - name: Extract manifest tags
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -127,33 +136,13 @@ jobs:
 
       - name: Create and push manifest
         run: |
-          # Extract the tags from metadata (these are the final manifest tags we want)
-          MANIFEST_TAGS="${{ steps.meta.outputs.tags }}"
-
-          # Create manifest for each tag
-          for manifest_tag in $MANIFEST_TAGS; do
+          set -euo pipefail
+          for manifest_tag in ${{ steps.meta.outputs.tags }}; do
             echo "Creating manifest for $manifest_tag"
-
-            # The architecture-specific images have -amd64 and -arm64 suffixes
             amd64_image="${manifest_tag}-amd64"
             arm64_image="${manifest_tag}-arm64"
-
-            echo "Looking for images: $amd64_image and $arm64_image"
-
-            # Check if both architecture images exist
-            if docker manifest inspect "$amd64_image" >/dev/null 2>&1 && docker manifest inspect "$arm64_image" >/dev/null 2>&1; then
-              echo "Both images found, creating manifest..."
-              docker manifest create "$manifest_tag" \
-                "$amd64_image" \
-                "$arm64_image"
-              docker manifest push "$manifest_tag"
-              echo "Successfully created and pushed manifest for $manifest_tag"
-            else
-              echo "Error: One or both architecture images not found"
-              echo "Checking AMD64 image: $amd64_image"
-              docker manifest inspect "$amd64_image" || echo "AMD64 image not found"
-              echo "Checking ARM64 image: $arm64_image"
-              docker manifest inspect "$arm64_image" || echo "ARM64 image not found"
-              exit 1
-            fi
+            docker manifest inspect "$amd64_image" >/dev/null 2>&1 || { echo "Missing $amd64_image"; exit 1; }
+            docker manifest inspect "$arm64_image" >/dev/null 2>&1 || { echo "Missing $arm64_image"; exit 1; }
+            docker manifest create "$manifest_tag" "$amd64_image" "$arm64_image"
+            docker manifest push "$manifest_tag"
           done
