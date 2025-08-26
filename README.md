@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://sim.ai" target="_blank" rel="noopener noreferrer">
-    <img src="apps/sim/public/logo/reverse/text/large.png" alt="Sim Logo" width="500"/>
+    <img src="https://tornasol.ai/wp-content/uploads/2025/08/tornasol-horizontal.png" alt="Sim Logo" width="500"/>
   </a>
 </p>
 
