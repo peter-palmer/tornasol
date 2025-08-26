@@ -31,7 +31,7 @@ export const SlackBlock: BlockConfig<SlackResponse> = {
       type: 'dropdown',
       layout: 'full',
       options: [
-        { label: 'Sim Bot', id: 'oauth' },
+        { label: 'Tornasol Bot', id: 'oauth' },
         { label: 'Custom Bot', id: 'bot_token' },
       ],
       value: () => 'oauth',
